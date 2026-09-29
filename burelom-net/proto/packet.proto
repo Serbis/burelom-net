@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package packet;
+
+message Packet {
+  uint32 id = 1;
+  uint32 source = 2;
+  uint32 dest = 3;
+  uint32 hops = 4;
+
+  oneof body {
+    Datagram datagram = 10;
+    Preq preq = 11;
+    Prep prep = 12;
+    Hello hello = 13;
+  }
+}
+
+message Datagram {
+  bytes nounce = 1;
+  bytes data = 2;
+}
+
+message Preq {
+  uint32 hops = 1;
+  uint32 ttl = 2;
+  uint32 dest = 3;
+  uint32 source = 4;
+}
+
+message Prep {
+  uint32 hops = 1;
+  uint32 dest = 2;
+  uint32 source = 3;
+}
+
+message Hello {
+  string name = 1;
+  uint32 roles = 2;
+  repeated uint32 neighbour = 3;
+}

@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = ["burelom-net", "burelom-net-emulator"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.98.0"
+
+[workspace.dependencies]
+defmt = "1.1.1"
+log = "0.4.34"
+tokio = { version = "1.53.1", features = ["full"] }
+anyhow = { version = "1.0", default-features = false }
+async-trait = "0.1.92"
+const-hex = "1.19.3"
+prost = "0.14"
+prost-types = "0.14"
+bon = "3.10.1"
+enumset = "1.1.14"
+async-channel = "2.5.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+debug = true
+overflow-checks = true
+
+[profile.dev]
+opt-level = 1
