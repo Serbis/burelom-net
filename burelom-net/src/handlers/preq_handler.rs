@@ -1,17 +1,20 @@
+use core::cell::RefCell;
+
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use crate::logging::{info, warn};
-use xutex::Mutex;
+use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use prost::Message;
 use crate::packetizer::Packetizer;
 use crate::traits::mac::Mac;
 use crate::proto;
 use crate::routing_table::RoutingTable;
 use crate::burelom_node::{BurelomNode};
+use crate::prelude::*;
 
 /// Preq packed handler
 pub struct PreqHandler {
-  seen_packet: Arc<Mutex<Vec<(u32, u32)>>>,
+  seen_packet: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<(u32, u32)>>>>,
   addr: u32,
   packetizer: Arc<Packetizer>,
   routing_table: Arc<RoutingTable>,
@@ -43,9 +46,12 @@ impl PreqHandler {
     };
 
     // Check if we early seen this preq - drop it
-    let seen = self.seen_packet.lock()
+    let seen = self.seen_packet.lock(|seen_packet| {
+      seen_packet.borrow()
       .iter()
-      .any(|(id, _)| packet.id == *id);
+      .any(|(id, _)| packet.id == *id)
+    });
+      
     if seen {
       info!("<{}> Received transit preq packet from={}, packet dropped due seen",
         self.addr, preq.source);
@@ -53,7 +59,9 @@ impl PreqHandler {
     }
 
     // Add preq to seen
-    self.seen_packet.lock().push((packet.id, 0));
+    self.seen_packet.lock(|seen_packet| {
+      seen_packet.borrow_mut().push((packet.id, 0));
+    });
 
     // Check if we target of that preq
     if preq.dest == self.addr {

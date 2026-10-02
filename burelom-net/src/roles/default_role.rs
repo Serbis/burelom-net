@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use crate::logging::info;
 use crate::{handlers::body_handler::BodyHandler, packetizer::Packetizer, proto, routing_table::{RoutingTable}, burelom_node::BurelomNode, traits::mac::Mac};
 use prost::Message;
+use crate::prelude::*;
 
 /// Default role task. This task listen mac layer adapter for incoming packet.
 /// Received packet decoded and routing table updated with data from packet

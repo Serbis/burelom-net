@@ -3,19 +3,21 @@ use alloc::sync::Arc;
 use anyhow::{anyhow, Result};
 use hashbrown::HashMap;
 use crate::logging::info;
-use xutex::Mutex;
+use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
+use core::cell::RefCell;
 #[cfg(feature = "tokio")]
 use core::time::Duration;
 #[cfg(feature = "embassy")]
 use embassy_time::Duration;
+use crate::prelude::*;
 
 pub struct ActionApi {
   packetizer: Arc<Packetizer>,
   routing_table: Arc<RoutingTable>,
   mac: Arc<Box<dyn Mac>>,
   addr: u32,
-  preq_awaiters: Arc<Mutex<HashMap<u32, async_oneshot::Sender<u32>>>>,
-  seen_packet: Arc<Mutex<Vec<(u32, u32)>>>
+  preq_awaiters: Arc<Mutex<CriticalSectionRawMutex, RefCell<HashMap<u32, async_oneshot::Sender<u32>>>>>,
+  seen_packet: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<(u32, u32)>>>>
 }
 
 impl ActionApi {
@@ -86,10 +88,14 @@ impl ActionApi {
 
     // Register response waiter
     let (tx, rx) = async_oneshot::oneshot::<u32>();
-    self.preq_awaiters.lock().insert(dest, tx);
+    self.preq_awaiters.lock(|preq_awaiters| {
+      preq_awaiters.borrow_mut().insert(dest, tx);
+    });
 
     // Put packet to seen (for break ciquit in one hop target)
-    self.seen_packet.lock().push((packet_id, 0));
+    self.seen_packet.lock(|seen_packet| {
+      seen_packet.borrow_mut().push((packet_id, 0));
+    });
 
     // Send packet to device mac broadcast
     self.mac
@@ -109,7 +115,9 @@ impl ActionApi {
     
     match result {
       Ok(v) => {
-        self.preq_awaiters.lock().remove(&dest);
+        self.preq_awaiters.lock(|preq_awaiter| {
+          preq_awaiter.borrow_mut().remove(&dest);
+        });
         if let Ok(gateway) = v {
           info!("<{}> Route request completed dest={} gw={}", self.addr, dest, gateway);
           return Some(gateway);

@@ -4,6 +4,7 @@ use crate::{
   packetizer::{self, Packetizer}, proto, roles::device_roles::DeviceRole, routing_table::RoutingTable, burelom_node::BurelomNode, traits::mac::Mac
 };
 use alloc::sync::Arc;
+use crate::prelude::*;
 
 /// Datagram packet handler
 pub struct DatagramHandler {
@@ -60,15 +61,15 @@ impl DatagramHandler {
 
       // If node is gateway, send datagram to gateway role hanlder  
       if self.is_gateway {
-        if let Err(e) 
+        if let Err(_) 
           = self.gateway_sender.send((packet.source, payload)).await {
-            error!("<{}>Unable to handle datagram due gateway channel error: {}", self.addr, e);
+            error!("<{}>Unable to handle datagram due gateway channel error", self.addr);
           }
       } else {
         // If node is regular, send dataram to client code awaiter
-        if let Err(e) 
+        if let Err(_) 
           = self.datagram_sender.send((packet.source, payload)).await {
-            error!("<{}>Unable to handle datagram due channel error: {}", self.addr, e);
+            error!("<{}>Unable to handle datagram due channel error", self.addr);
           }
       }
 

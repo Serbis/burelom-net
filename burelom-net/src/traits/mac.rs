@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use crate::prelude::*;
 
 /// MAC layer functionality adapter. Under that layer can be understanded any intermediate
 /// layer between this mesh network and underlayed transport. It may by for example fully

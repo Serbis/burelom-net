@@ -6,6 +6,7 @@ use core::time::Duration;
 use alloc::sync::Arc;
 #[cfg(feature = "embassy")]
 use embassy_time::Duration;
+use crate::prelude::*;
 
 /// Beacon role task. This task regularaly send hello packet to the neighbor by
 /// MAC brodcast. Packet conains node specicif informatin like name, device roles

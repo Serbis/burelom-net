@@ -1,4 +1,17 @@
+#![cfg_attr(feature = "embassy", no_std)]
+#[allow(warnings)]
+
 extern crate alloc;
+
+pub mod prelude {
+    pub use alloc::boxed::Box;
+    pub use alloc::vec::Vec;
+    pub use alloc::vec;
+    pub use alloc::string::String;
+    pub use alloc::string;
+    pub use alloc::format;
+    pub use alloc::string::ToString;
+}
 
 pub mod burelom_node;
 pub mod traits;
@@ -16,8 +29,8 @@ pub mod proto {
 
 pub(crate) mod logging {
     #[cfg(feature = "defmt")]
-    pub use defmt::{debug, error, info, trace, warn};
+    pub use defmt::{error, info, warn};
 
     #[cfg(all(feature = "log", not(feature = "defmt")))]
-    pub use log::{debug, error, info, trace, warn};
+    pub use log::{error, info, warn};
 }

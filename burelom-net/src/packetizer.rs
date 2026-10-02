@@ -1,12 +1,15 @@
 use crate::proto::{self};
+use alloc::vec;
 use crate::traits::cipher::Cipher;
 use crate::{cobs::{self}};
 use alloc::vec::Vec;
+use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use crate::logging::{error, warn};
 use alloc::sync::Arc;
-use xutex::Mutex;
 use prost::Message;
+use core::cell::RefCell;
 use core::sync::atomic::{AtomicU32, Ordering};
+use crate::prelude::*;
 
 pub(crate) const NULL_NOUNCE: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
 
@@ -14,9 +17,9 @@ pub(crate) const NULL_NOUNCE: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
 /// packets
 pub struct Packetizer {
   // Pacekt construcion buffer (see unsrip doc)
-  buffer: Arc<Mutex<Vec<u8>>>,
+  buffer: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<u8>>>>, 
   // Packet id global couner
-  id_counter: Arc<Mutex<AtomicU32>>,
+  id_counter: Arc<Mutex<CriticalSectionRawMutex, AtomicU32>>,
   // Node cryptograhic adapter
   cipher: Box<dyn Cipher>,
   // Node self network address
@@ -24,9 +27,9 @@ pub struct Packetizer {
 }
 
 impl Packetizer {
-  pub fn new(id_counter: Arc<Mutex<AtomicU32>>, addr: u32, cipher: Box<dyn Cipher>) -> Self {
+  pub fn new(id_counter: Arc<Mutex<CriticalSectionRawMutex, AtomicU32>>, addr: u32, cipher: Box<dyn Cipher>) -> Self {
     Packetizer {
-      buffer: Arc::new(Mutex::new(vec![])),
+      buffer: Arc::new(Mutex::new(RefCell::new(vec![]))),
       id_counter,
       addr,
       cipher
@@ -45,26 +48,29 @@ impl Packetizer {
   pub fn unstrip(&self, data: &[u8]) -> Vec<Vec<u8>> {
     let mut output: Vec<Vec<u8>> = vec![];
     let mut last_dp = 0;
-    let mut buffer = self.buffer.lock();
-    
-    for (index, &value) in data.iter().enumerate() {
-      if value == 0x00 {
-        buffer.extend_from_slice(&data[last_dp..index + 1]);
-        
-        if let Some(packet) = cobs::decode(&buffer) {
-          output.push(packet);
-        } else {
-          warn!("Untable to decode cobs data:\n{}", const_hex::encode_upper(&*buffer));
+    self.buffer.lock(|guard| {
+      let mut buffer = guard.borrow_mut();
+
+      for (index, &value) in data.iter().enumerate() {
+        if value == 0x00 {
+          buffer.extend_from_slice(&data[last_dp..index + 1]);
+          
+          if let Some(packet) = cobs::decode(&buffer) {
+            output.push(packet);
+          } else {
+            warn!("Untable to decode cobs data:\n{}", const_hex::encode_upper(&*buffer));
+          }
+          
+          *buffer = vec![];
+          last_dp = index + 1;
         }
-        
-        *buffer = vec![];
-        last_dp = index + 1;
       }
-    }
+      
+      if last_dp < data.len() {
+        buffer.extend_from_slice(&data[last_dp..]);
+      }
+    });
     
-    if last_dp < data.len() {
-      buffer.extend_from_slice(&data[last_dp..]);
-    }
     
     return output;
   }
@@ -174,7 +180,7 @@ impl Packetizer {
     match self.cipher.encrypt(data) {
       Ok(v) => v,
       Err(e) => {
-        error!("<{}> Unable to encrypt payload: {}", e, self.addr);
+        error!("<{}> Unable to encrypt payload: {}", e.to_string(), self.addr);
         (NULL_NOUNCE, vec![0])
       }
     }
@@ -193,7 +199,7 @@ impl Packetizer {
     match self.cipher.decrypt(nounce, enc) {
       Ok(v) => v,
       Err(e) => {
-        error!("<{}> Unable to decrypt payload: {}", e, self.addr);
+        error!("<{}> Unable to decrypt payload: {}", e.to_string(), self.addr);
         vec![0]
       }
     }
@@ -208,7 +214,7 @@ impl Packetizer {
   /// # Returns - complete protobuf packet object
   fn construct_packet(&self, dest: u32, body: proto::packet::Body) -> proto::Packet {
     proto::Packet {
-      id: self.id_counter.lock().fetch_add(1, Ordering::SeqCst),
+      id: self.id_counter.lock(|guard| { guard.fetch_add(1, Ordering::SeqCst) }),
       source: self.addr,
       dest: dest,
       hops: 1,

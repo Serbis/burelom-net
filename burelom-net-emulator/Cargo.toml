@@ -24,6 +24,7 @@ cmac = "0.8.0"
 ctr = "0.10.1"
 rand = "0.10.3"
 aes = "0.9.3"
+critical-section = { version = "1.2", features = ["std"] }
 
 [dev-dependencies]
 

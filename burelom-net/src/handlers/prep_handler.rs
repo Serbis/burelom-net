@@ -1,12 +1,15 @@
+use core::cell::RefCell;
+
 use crate::proto;
 use crate::routing_table::RoutingTable;
 use alloc::sync::Arc;
 use hashbrown::HashMap;
 use crate::logging::{info, warn};
-use xutex::Mutex;
+use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use crate::packetizer::Packetizer;
 use crate::traits::mac::Mac;
 use crate::burelom_node::{BurelomNode};
+use crate::prelude::*;
 
 /// Prep packets handler
 pub struct PrepHandler {
@@ -14,7 +17,7 @@ pub struct PrepHandler {
   packetizer: Arc<Packetizer>,
   routing_table: Arc<RoutingTable>,
   mac:Arc<Box<dyn Mac>>,
-  preq_awaiters: Arc<Mutex<HashMap<u32, async_oneshot::Sender<u32>>>>
+  preq_awaiters: Arc<Mutex<CriticalSectionRawMutex, RefCell<HashMap<u32, async_oneshot::Sender<u32>>>>>
 }
 
 impl PrepHandler {
@@ -43,13 +46,16 @@ impl PrepHandler {
     if prep.source == self.addr {
       info!("<{}> Received target prep packet from={}", self.addr, prep.dest);
       // Find route request awaiter and complete them
-      let mut preq_awaiters = self.preq_awaiters.lock();
-      if let Some(awaiter) = preq_awaiters.get_mut(&prep.dest) {
-        awaiter.send(gateway).unwrap();
-        preq_awaiters.remove(&gateway);
-      } else {
-        warn!("<{}> Not found preq awaiter for dest={}", self.addr, prep.dest);
-      }
+      self.preq_awaiters.lock(|guard| {
+        let mut preq_awaiters = guard.borrow_mut();
+        if let Some(awaiter) = preq_awaiters.get_mut(&prep.dest) {
+          awaiter.send(gateway).unwrap();
+          preq_awaiters.remove(&gateway);
+        } else {
+          warn!("<{}> Not found preq awaiter for dest={}", self.addr, prep.dest);
+        }
+      });
+      
     } else {
       // Else transmit prep to dest
       let route = self.routing_table.find(prep.source);

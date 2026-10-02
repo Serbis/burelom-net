@@ -1,3 +1,5 @@
+use crate::prelude::*;
+
 /// Encode data with COBS algorithm
 /// 
 /// # Arguments

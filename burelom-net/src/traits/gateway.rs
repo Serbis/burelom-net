@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use crate::prelude::*;
 
 /// Gateway functuionality adapter. Used when device perform role GATEWAY for
 /// provde interlayer between networks boundaries. Exmple implementation of 

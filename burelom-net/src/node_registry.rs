@@ -1,11 +1,14 @@
+use core::cell::RefCell;
+use alloc::vec;
 use alloc::sync::Arc;
-use xutex::Mutex;
+use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use crate::{proto, roles::device_roles::DeviceRole, routing_table::RoutinRow};
 use enumset::{EnumSet, EnumSetType};
 #[cfg(feature = "tokio")]
 use tokio::time::Instant;
 #[cfg(feature = "embassy")]
 use embassy_time::Instant;
+use crate::prelude::*;
 
 #[derive(Debug, EnumSetType)]
 pub enum IdentyType {
@@ -52,13 +55,13 @@ pub struct NodeRegistryRow {
 /// distanse, when their be last alive and other usefull informaion which can by used by
 /// client code.
 pub struct NodeRegistry {
-  pub table: Arc<Mutex<Vec<NodeRegistryRow>>>
+  pub table: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<NodeRegistryRow>>>>
 }
 
 impl NodeRegistry {
   pub fn new() -> Self {
     NodeRegistry {
-        table: Arc::new(Mutex::new(vec![]))
+        table: Arc::new(Mutex::new(RefCell::new(vec![])))
     }
   }
 
@@ -70,28 +73,31 @@ impl NodeRegistry {
   /// `route_entry` - routing table entry
   /// `identy_type` - indentity type basen on the packet type than was trigger update
   pub fn update_from_rt(&self, route_entry: &RoutinRow, identy_type: IdentyType) {
-    let mut table = self.table.lock();
-    let exist = table
-      .iter_mut()
-      .find(|v| v.addr == route_entry.target);
-      
-    if let Some(exist) = exist {
-      exist.hops = route_entry.hops;
-      exist.identy_type.insert(identy_type);
-      exist.last_seen = route_entry.last_seen;
-    } else {
-      let row = NodeRegistryRow {
-        addr: route_entry.target,
-        name: None,
-        hops: route_entry.hops,
-        last_seen: route_entry.last_seen,
-        neighbour_nodes: None,
-        identy_type: identy_type.into(),
-        roles: None
-      };
+    self.table.lock(|guard| {
+      let mut table = guard.borrow_mut();
+      let exist = table
+        .iter_mut()
+        .find(|v| v.addr == route_entry.target);
+        
+      if let Some(exist) = exist {
+        exist.hops = route_entry.hops;
+        exist.identy_type.insert(identy_type);
+        exist.last_seen = route_entry.last_seen;
+      } else {
+        let row = NodeRegistryRow {
+          addr: route_entry.target,
+          name: None,
+          hops: route_entry.hops,
+          last_seen: route_entry.last_seen,
+          neighbour_nodes: None,
+          identy_type: identy_type.into(),
+          roles: None
+        };
 
-      table.push(row);
-    }
+        table.push(row);
+      }
+    });
+    
   }
 
   /// Update registry data from hello packet handler. This function call everytime when
@@ -104,50 +110,56 @@ impl NodeRegistry {
   /// `addr` - address of source node
   /// `hops` - updated because hello hops may be deffenet from routing hops
   pub fn update_from_hello(&self, hello: &proto::Hello, addr: u32, hops: u32) {
-    let mut table = self.table.lock();
-    let exist = table
-      .iter_mut()
-      .find(|v| v.addr == addr);
-      
-    if let Some(exist) = exist {
-      exist.addr = addr;
-      exist.hops = hops;
-      exist.name = Some(hello.name.clone());
-      exist.roles = Some(EnumSet::<DeviceRole>::from_u32(hello.roles));
-      exist.last_seen = Instant::now();
-      exist.neighbour_nodes = Some(hello.neighbour.clone());
-      exist.identy_type.insert(IdentyType::HELLO);
-    } else {
-      let row = NodeRegistryRow {
-        addr,
-        name: Some(hello.name.clone()),
-        hops,
-        last_seen: Instant::now(),
-        neighbour_nodes: None,
-        identy_type: IdentyType::HELLO.into(),
-        roles: Some(EnumSet::<DeviceRole>::from_u32(hello.roles))
-      };
+    self.table.lock(|guard| {
+      let mut table = guard.borrow_mut();
+      let exist = table
+        .iter_mut()
+        .find(|v| v.addr == addr);
+        
+      if let Some(exist) = exist {
+        exist.addr = addr;
+        exist.hops = hops;
+        exist.name = Some(hello.name.clone());
+        exist.roles = Some(EnumSet::<DeviceRole>::from_u32(hello.roles));
+        exist.last_seen = Instant::now();
+        exist.neighbour_nodes = Some(hello.neighbour.clone());
+        exist.identy_type.insert(IdentyType::HELLO);
+      } else {
+        let row = NodeRegistryRow {
+          addr,
+          name: Some(hello.name.clone()),
+          hops,
+          last_seen: Instant::now(),
+          neighbour_nodes: None,
+          identy_type: IdentyType::HELLO.into(),
+          roles: Some(EnumSet::<DeviceRole>::from_u32(hello.roles))
+        };
 
-      table.push(row);
-    }
+        table.push(row);
+      }
+    });
+    
   }
   
   /// Get nearest (hops==1) participants from the node
   /// 
   /// # Returns - list of nearest nodes
   pub fn get_neighbour(&self) -> Vec<NodeRegistryRow> {
-    let table = self.table.lock();
-    let filtered = table.iter()
-      .filter(|v| v.hops == 1)
-      .map(|v| v.clone())
-      .collect();
-    filtered
+    self.table.lock(|table| {
+      let filtered = table.borrow()
+        .iter()
+        .filter(|v| v.hops == 1)
+        .map(|v| v.clone())
+        .collect();
+      filtered
+    }) 
   }
 
   // Get copy of the registry
   // 
   // #Returns - copy of the intrenal registry database
   pub fn get_registry(&self) -> Vec<NodeRegistryRow> {
-    self.table.lock().clone()
+    self.table
+      .lock(|table| table.borrow().clone())
   }
 }

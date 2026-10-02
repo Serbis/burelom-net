@@ -50,8 +50,7 @@ impl NetworkCoorditor {
         for (_, (_, test_node)) in node_hash.lock().unwrap().iter().enumerate() {
           let rt = test_node.node.routing_table
             .routing_table
-            .lock()
-            .clone();
+            .lock(|v| v.borrow().clone());
           let known_nodes = test_node.node.get_known_nodes();
           visualizer_state.update_routing(test_node.addr, &rt);
           visualizer_state.update_known_nodes(test_node.addr, &known_nodes);

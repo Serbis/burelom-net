@@ -1,11 +1,14 @@
+use core::cell::RefCell;
+use alloc::vec;
 use alloc::sync::Arc;
-use crate::logging::info;
-use xutex::Mutex;
+use crate::{logging::info};
 use alloc::vec::Vec;
 #[cfg(feature = "tokio")]
 use tokio::time::Instant;
 #[cfg(feature = "embassy")]
 use embassy_time::Instant;
+use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
+
 
 use crate::{node_registry::{IdentyType, NodeRegistry}, proto};
 
@@ -29,7 +32,7 @@ pub struct RoutingTable {
   // Known node registry
   node_registry: Arc<NodeRegistry>,
   // Table
-  pub routing_table: Arc<Mutex<Vec<RoutinRow>>>,
+  pub routing_table: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<RoutinRow>>>>,
 }
 
 impl RoutingTable {
@@ -37,7 +40,7 @@ impl RoutingTable {
     RoutingTable {
       addr,
       node_registry,
-      routing_table: Arc::new(Mutex::new(vec![]))
+      routing_table: Arc::new(Mutex::new(RefCell::new(vec![])))
     }
   }
 
@@ -51,41 +54,41 @@ impl RoutingTable {
   /// `pakcet` - incoming packet
   /// `gatway` - gateway node where are packet from come
   pub fn update(&self, packet: &proto::Packet, gateway: u32) {
-    let mut guard = self.routing_table.lock();
-    let routing_table = &mut *guard;   
-
-    match routing_table
-      .iter_mut()
-      .find(|v| v.target == packet.source) 
-    {
-      Some(route) => {
-        if route.hops > packet.hops {
-          route.gateway = gateway;
-          route.hops = packet.hops;
-          route.last_seen = Instant::now();
-        } else {
-          route.last_seen = Instant::now();
+    self.routing_table.lock(|routing_table| {   
+      let mut routing_table = routing_table.borrow_mut();
+      match routing_table
+        .iter_mut()
+        .find(|v| v.target == packet.source) 
+      {
+        Some(route) => {
+          if route.hops > packet.hops {
+            route.gateway = gateway;
+            route.hops = packet.hops;
+            route.last_seen = Instant::now();
+          } else {
+            route.last_seen = Instant::now();
+          }
+          info!("<{}> Update route target={}, gateway={}, hops={}",
+              self.addr, &route.target, &route.gateway, &route.hops);
+          self.node_registry.update_from_rt(route, IdentyType::from(packet));
         }
-         info!("<{}> Update route target={}, gateway={}, hops={}",
-            self.addr, &route.target, &route.gateway, &route.hops);
-        self.node_registry.update_from_rt(route, IdentyType::from(packet));
-      }
-      None => {
-        if packet.source == self.addr {
-          return;
+        None => {
+          if packet.source == self.addr {
+            return;
+          }
+          let route = RoutinRow {
+            target: packet.source,
+            gateway: gateway,
+            hops: packet.hops,
+            last_seen: Instant::now()
+          };
+          info!("<{}> Created route target={}, gateway={}, hops={}",
+          self.addr, &route.target, &route.gateway, &route.hops);
+          self.node_registry.update_from_rt(&route, IdentyType::from(packet));
+          routing_table.push(route);
         }
-        let route = RoutinRow {
-          target: packet.source,
-          gateway: gateway,
-          hops: packet.hops,
-          last_seen: Instant::now()
-        };
-        info!("<{}> Created route target={}, gateway={}, hops={}",
-        self.addr, &route.target, &route.gateway, &route.hops);
-        self.node_registry.update_from_rt(&route, IdentyType::from(packet));
-        routing_table.push(route);
       }
-    }
+    });
   }
 
   /// Find gateway by destination adress
@@ -95,10 +98,12 @@ impl RoutingTable {
   /// 
   /// # Returns - gateway or None if route not found
   pub fn find(&self, dest: u32) -> Option<u32> {
-    self.routing_table
-      .lock()
+    self.routing_table.lock(|guard| {
+      guard.borrow()
       .iter()
       .find(|v| v.target == dest)
       .map(|v| v.gateway)
+    }) 
+      
   }
 }

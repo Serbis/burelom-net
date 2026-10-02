@@ -6,6 +6,7 @@ use tokio::select;
 use crate::{action_api::ActionApi, burelom_node::BurelomNode, traits::{gateway::Gateway}};
 #[cfg(feature = "embassy")]
 use embassy_futures::select::{select, Either};
+use crate::prelude::*;
 
 /// Gateway role task. This task do two actions. First it wait datagram data from default
 /// role task, if device configured as GATEWAY. Default task send only stipped and 

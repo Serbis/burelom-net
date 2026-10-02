@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-tokio = ["dep:tokio", "dep:log", "log"]
+tokio = [
+  "dep:tokio",
+  "dep:log",
+  "dep:embassy-sync",
+  "log"
+]
 embassy = [
   "dep:embassy-time",
   "dep:embassy-executor",
@@ -25,7 +30,6 @@ const-hex.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 bon.workspace = true
-xutex = "0.2"
 async-oneshot = "0.5.9"
 hashbrown = "0.17.1"
 async-channel.workspace = true

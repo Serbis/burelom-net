@@ -1,9 +1,11 @@
+use core::cell::RefCell;
+use alloc::vec;
 use core::sync::atomic::{AtomicU32};
 use alloc::vec::Vec;
 use async_channel::{Receiver, Sender};
 use enumset::EnumSet;
 use hashbrown::HashMap;
-use xutex::Mutex;
+use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use crate::action_api::ActionApi;
 use crate::node_registry::{NodeRegistry, NodeRegistryRow};
 use crate::roles;
@@ -21,6 +23,7 @@ use alloc::string::String;
 use core::time::Duration;
 #[cfg(feature = "embassy")]
 use embassy_time::Duration;
+use crate::prelude::*;
 
 /// Main object implemening the node logic
 pub struct BurelomNode {
@@ -29,7 +32,7 @@ pub struct BurelomNode {
   /// Utils for packets binary operations
   pub(crate) packetizer: Arc<Packetizer>,
   /// List of awaiters for route response
-  pub(crate) preq_awaiters: Arc<Mutex<HashMap<u32, async_oneshot::Sender<u32>>>>,
+  pub(crate) preq_awaiters: Arc<Mutex<CriticalSectionRawMutex, RefCell<HashMap<u32, async_oneshot::Sender<u32>>>>>,
   /// Queue for input datagram on client side cond waits for incoming data
   pub(crate) datagram_sender: Arc<Sender<(u32, Vec<u8>)>>,
   /// Internal queue for gateway role, user for transfetr data between datagram
@@ -51,7 +54,7 @@ pub struct BurelomNode {
   /// Gateway adapter if the node configured as GATEWAY
   pub(crate) gateway: Option<Arc<dyn Gateway>>,
   /// Registry of seen pakcets broadcast id's
-  pub(crate) seen_packet: Arc<Mutex<Vec<(u32, u32)>>>,
+  pub(crate) seen_packet: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<(u32, u32)>>>>,
   /// Routing table
   pub routing_table: Arc<RoutingTable>,
   /// Known nodes database
@@ -130,7 +133,7 @@ impl BurelomNode {
       addr,
       mac: Arc::new(mac),
       gateway: gateway.map(|v| v),
-      preq_awaiters: Arc::new(Mutex::new(HashMap::new())),
+      preq_awaiters: Arc::new(Mutex::new(RefCell::new(HashMap::new()))),
       packetizer: Arc::new(packetizer),
       datagram_sender: Arc::new(datagram_sender),
       datagram_receiver: Arc::new(datagram_receiver),
@@ -139,7 +142,7 @@ impl BurelomNode {
       roles: roles,
       beacon_interval: beacon_interval.unwrap_or(Duration::from_secs(60)),
       name: name.unwrap_or(format!("Node-{}", addr)),
-      seen_packet: Arc::new(Mutex::new(vec![])),
+      seen_packet: Arc::new(Mutex::new(RefCell::new(vec![]))),
       routing_table: Arc::new(RoutingTable::new(addr, node_registry.clone())),
       node_registry,
       action_api: None
