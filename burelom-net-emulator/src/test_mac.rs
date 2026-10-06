@@ -23,7 +23,7 @@ impl Mac for TestMac {
     self.network_coordinator.send_from_mac(self.addr, addr, data);
   }
 
-  async fn recv(&self) -> (u32, Vec<u8>) {
+  async fn recv(&self) -> (u32, i32, Vec<u8>) {
     self.network_coordinator.recv_from_mac(self.addr).await
   }
 }

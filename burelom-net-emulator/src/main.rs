@@ -1,5 +1,5 @@
 
-use std::{sync::{Arc, Once}, thread};
+use std::{sync::{Arc, Once}, thread, time::Duration};
 use log::{LevelFilter, info};
 use burelom_net::roles::device_roles::DeviceRole;
 use crate::{network_coordinator::NetworkCoorditor, test_cipher::PcAesCtrShortCmac, test_gateway::TestGateway, test_node::TestNode, test_mac::TestMac, visualizer::{Visualizer, VisualizerState}};
@@ -10,6 +10,7 @@ mod test_mac;
 mod network_coordinator;
 mod test_gateway;
 mod test_cipher;
+mod test_rand;
 
 static INIT: Once = Once::new();
 
@@ -46,9 +47,11 @@ fn main() {
             .addr(1)
             .position([0_f32, 75_f32])
             .power(100)
-            .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
-            // .roles(DeviceRole::DEFAULT.into())
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
+            .roles(DeviceRole::DEFAULT.into())
             .mac(Box::new(TestMac::new(1, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
             .cipher(Box::new(PcAesCtrShortCmac::new(key)))
             .build()
             .unwrap();
@@ -57,9 +60,11 @@ fn main() {
             .addr(2)
             .position([75_f32, 0_f32])
             .power(100)
-            .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
-            //.roles(DeviceRole::DEFAULT.into())
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
+            .roles(DeviceRole::DEFAULT.into())
             .mac(Box::new(TestMac::new(2, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
             .cipher(Box::new(PcAesCtrShortCmac::new(key)))
             .build()
             .unwrap();
@@ -68,9 +73,11 @@ fn main() {
             .addr(3)
             .position([75_f32, 75_f32])
             .power(100)
-            .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
-            // .roles(DeviceRole::DEFAULT.into())
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
+            .roles(DeviceRole::DEFAULT.into())
             .mac(Box::new(TestMac::new(3, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
             .cipher(Box::new(PcAesCtrShortCmac::new(key)))
             .build()
             .unwrap();
@@ -78,9 +85,11 @@ fn main() {
             .addr(4)
             .position([75_f32, 150_f32])
             .power(100)
-            .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
-            // .roles(DeviceRole::DEFAULT.into())
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
+            .roles(DeviceRole::DEFAULT.into())
             .mac(Box::new(TestMac::new(4, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
             .cipher(Box::new(PcAesCtrShortCmac::new(key)))
             .build()
             .unwrap();
@@ -88,9 +97,11 @@ fn main() {
             .addr(5)
             .position([150_f32, 0_f32])
             .power(100)
-            .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
-            // .roles(DeviceRole::DEFAULT.into())
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
+            .roles(DeviceRole::DEFAULT.into())
             .mac(Box::new(TestMac::new(5, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
             .cipher(Box::new(PcAesCtrShortCmac::new(key)))
             .build()
             .unwrap();
@@ -100,10 +111,12 @@ fn main() {
             .addr(6)
             .position([150_f32, 75_f32])
             .power(100)
-            .roles(DeviceRole::DEFAULT | DeviceRole::BEACON | DeviceRole::GATEWAY)
-            // .roles(DeviceRole::DEFAULT.into())
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON | DeviceRole::GATEWAY)
+            .roles(DeviceRole::DEFAULT.into())
             .gateway(test_gateway_6.clone())
             .mac(Box::new(TestMac::new(6, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
             .cipher(Box::new(PcAesCtrShortCmac::new(key)))
             .build()
             .unwrap();
@@ -111,9 +124,48 @@ fn main() {
             .addr(7)
             .position([150_f32, 150_f32])
             .power(100)
-            .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
-            // .roles(DeviceRole::DEFAULT.into())
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
+            .roles(DeviceRole::DEFAULT.into())
             .mac(Box::new(TestMac::new(7, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
+            .cipher(Box::new(PcAesCtrShortCmac::new(key)))
+            .build()
+            .unwrap();
+           let test_node_8 = TestNode::builder()
+            .addr(8)
+            .position([225_f32, 0_f32])
+            .power(100)
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
+            .roles(DeviceRole::DEFAULT.into())
+            .mac(Box::new(TestMac::new(8, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
+            .cipher(Box::new(PcAesCtrShortCmac::new(key)))
+            .build()
+            .unwrap();
+
+          let test_node_9 = TestNode::builder()
+            .addr(9)
+            .position([225_f32, 75_f32])
+            .power(100)
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON | DeviceRole::GATEWAY)
+            .roles(DeviceRole::DEFAULT.into())
+            .mac(Box::new(TestMac::new(9, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
+            .cipher(Box::new(PcAesCtrShortCmac::new(key)))
+            .build()
+            .unwrap();
+          let test_node_10 = TestNode::builder()
+            .addr(10)
+            .position([225_f32, 150_f32])
+            .power(100)
+            // .roles(DeviceRole::DEFAULT | DeviceRole::BEACON)
+            .roles(DeviceRole::DEFAULT.into())
+            .mac(Box::new(TestMac::new(10, network_coordinator.clone())))
+            .route_ttl(Duration::from_secs(30))
+            .hello_interval(Duration::from_secs(15))
             .cipher(Box::new(PcAesCtrShortCmac::new(key)))
             .build()
             .unwrap();
@@ -126,12 +178,21 @@ fn main() {
             test_node_5,
             test_node_6,
             test_node_7,
+            test_node_8,
+            test_node_9,
+            test_node_10,
           ];
           network_coordinator.setup_nodes(node_list);
-          network_coordinator.send(1, 7, vec![1, 2, 3]).await;
+          tokio::time::sleep(Duration::from_secs(1)).await;
+          network_coordinator.send(1, 10, vec![1, 2, 3]).await;
+          tokio::time::sleep(Duration::from_secs(1)).await;
+          network_coordinator.remove_node(9);
+          tokio::time::sleep(Duration::from_secs(45)).await;
+          network_coordinator.send(1, 10, vec![1, 2, 3]).await;
+          
           //test_gateway_6.sender.send((2, vec![1, 3, 4])).await;
-          let (from, data) = network_coordinator.recv(7).await;
-          info!("MAIN DATAGRAM from={}, data={}",from, const_hex::encode_upper(data));
+          //let (from, data) = network_coordinator.recv(7).await;
+          //info!("MAIN DATAGRAM from={}, data={}",from, const_hex::encode_upper(data));
           //network_coordinator.route_request(1, 7).await;
           //network_coordinator.send(1, 7, vec![1, 2, 3]).await;
           // if result.is_some() {

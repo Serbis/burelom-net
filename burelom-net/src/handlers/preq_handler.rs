@@ -2,6 +2,7 @@ use core::cell::RefCell;
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use heapless::HistoryBuf;
 use crate::logging::{info, warn};
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use prost::Message;
@@ -14,7 +15,7 @@ use crate::prelude::*;
 
 /// Preq packed handler
 pub struct PreqHandler {
-  seen_packet: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<(u32, u32)>>>>,
+  seen_packet: Arc<Mutex<CriticalSectionRawMutex, RefCell<HistoryBuf<u32, 10>>>>,
   addr: u32,
   packetizer: Arc<Packetizer>,
   routing_table: Arc<RoutingTable>,
@@ -49,7 +50,7 @@ impl PreqHandler {
     let seen = self.seen_packet.lock(|seen_packet| {
       seen_packet.borrow()
       .iter()
-      .any(|(id, _)| packet.id == *id)
+      .any(|id| packet.id == *id)
     });
       
     if seen {
@@ -60,7 +61,7 @@ impl PreqHandler {
 
     // Add preq to seen
     self.seen_packet.lock(|seen_packet| {
-      seen_packet.borrow_mut().push((packet.id, 0));
+      seen_packet.borrow_mut().write(packet.id);
     });
 
     // Check if we target of that preq

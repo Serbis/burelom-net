@@ -1,4 +1,5 @@
 use crate::proto::{self};
+use crate::traits::rand::Rand;
 use alloc::vec;
 use crate::traits::cipher::Cipher;
 use crate::{cobs::{self}};
@@ -8,7 +9,6 @@ use crate::logging::{error, warn};
 use alloc::sync::Arc;
 use prost::Message;
 use core::cell::RefCell;
-use core::sync::atomic::{AtomicU32, Ordering};
 use crate::prelude::*;
 
 pub(crate) const NULL_NOUNCE: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -18,8 +18,8 @@ pub(crate) const NULL_NOUNCE: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
 pub struct Packetizer {
   // Pacekt construcion buffer (see unsrip doc)
   buffer: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<u8>>>>, 
-  // Packet id global couner
-  id_counter: Arc<Mutex<CriticalSectionRawMutex, AtomicU32>>,
+  // Random generator for packet ids
+  rand: Box<dyn Rand>,
   // Node cryptograhic adapter
   cipher: Box<dyn Cipher>,
   // Node self network address
@@ -27,10 +27,10 @@ pub struct Packetizer {
 }
 
 impl Packetizer {
-  pub fn new(id_counter: Arc<Mutex<CriticalSectionRawMutex, AtomicU32>>, addr: u32, cipher: Box<dyn Cipher>) -> Self {
+  pub fn new(rand: Box<dyn Rand>, addr: u32, cipher: Box<dyn Cipher>) -> Self {
     Packetizer {
       buffer: Arc::new(Mutex::new(RefCell::new(vec![]))),
-      id_counter,
+      rand,
       addr,
       cipher
     }
@@ -117,6 +117,14 @@ impl Packetizer {
 
     self.construct_packet(preq.source, proto::packet::Body::Prep(prep))
   }
+
+  /// Helper for constructing protobuf hello packet
+  /// 
+  /// # Returns - protobuf packet with hello semanthic
+  pub fn construct_hello(&self) -> proto::Packet {
+    let hello = proto::Hello {};
+    self.construct_packet(0, proto::packet::Body::Hello(hello))
+  }
   
   /// Helper for constructing protobuf datagram packet
   ///
@@ -134,21 +142,35 @@ impl Packetizer {
     self.construct_packet(dest, proto::packet::Body::Datagram(datagram))
   }
 
-  /// Helper for constructing protobuf hello packet
+  /// Helper for constructing protobuf beacon packet
   ///
   /// # Arguments
   /// `name` - name of the node
   /// `roles` - roles of the node
   /// `neighbour`  - neighbour of the node
   /// 
-  /// # Returns - protobuf packet with hello semanthic
-  pub fn construct_hello(&self, name: &String, roles: u32, neighbour: &Vec<u32>) -> proto::Packet {
-    let hello = proto::Hello {
+  /// # Returns - protobuf packet with beacon semanthic
+  pub fn construct_beacon(&self, name: &String, roles: u32, neighbour: &Vec<proto::NodeNeighbour>) -> proto::Packet {
+    let beacon = proto::Beacon {
       name: name.clone(),
       roles,
       neighbour: neighbour.clone()
     };
-    self.construct_packet(0, proto::packet::Body::Hello(hello))
+    self.construct_packet(0, proto::packet::Body::Beacon(beacon))
+  }
+
+  /// Helper for constructing protobuf rerr packet
+  ///
+  /// # Arguments
+  /// `return_addr` - address to with rerr must be retured
+  /// `original_dest` - original destination that was not achieved
+  /// 
+  /// # Returns - protobuf packet with rerr semanthic
+  pub fn construct_rerr(&self, return_addr: u32, original_dest: u32) -> proto::Packet {
+    let rerr = proto::Rerr {
+      original_dest
+    };
+    self.construct_packet(return_addr, proto::packet::Body::Rerr(rerr))
   }
   
   /// Encode protobuf packet object to binary blob with cobs
@@ -214,7 +236,7 @@ impl Packetizer {
   /// # Returns - complete protobuf packet object
   fn construct_packet(&self, dest: u32, body: proto::packet::Body) -> proto::Packet {
     proto::Packet {
-      id: self.id_counter.lock(|guard| { guard.fetch_add(1, Ordering::SeqCst) }),
+      id: self.rand.get_u32(),
       source: self.addr,
       dest: dest,
       hops: 1,

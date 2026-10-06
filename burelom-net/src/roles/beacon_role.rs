@@ -6,9 +6,9 @@ use core::time::Duration;
 use alloc::sync::Arc;
 #[cfg(feature = "embassy")]
 use embassy_time::Duration;
-use crate::prelude::*;
+use crate::{prelude::*, proto};
 
-/// Beacon role task. This task regularaly send hello packet to the neighbor by
+/// Beacon role task. This task regularaly send beacon packet to the neighbor by
 /// MAC brodcast. Packet conains node specicif informatin like name, device roles
 /// and known neighbor devices. Packet resend interval determained at node 
 /// configuration stage.
@@ -17,8 +17,8 @@ use crate::prelude::*;
 /// `addr` - node address
 /// `name` - node name (specified at node configuration stage)
 /// `mac` - external mac layer
-/// `packetizer` - for hello packet construction
-/// `beacon_interval` - hello packet resend interval
+/// `packetizer` - for beacon packet construction
+/// `beacon_interval` - beacon packet resend interval
 /// `roles` - current node roles
 /// `node_registry` - for collecting information aboun neighbor
 async fn task_body(
@@ -33,21 +33,26 @@ async fn task_body(
   info!("Applied device role BEACON");
 
   loop {
-    info!("<{}> Send hello data", addr);
+    info!("<{}> Send beacon data", addr);
 
 
     // Create roles bitmask
     let roles = roles.as_u32();
 
     // Get node neighbour
-    let neighbour: Vec<u32> = node_registry.get_neighbour()
+    let neighbour = node_registry.get_neighbour()
       .iter()
-      .map(|v| v.addr)
+      .map(|v| {
+        proto::NodeNeighbour {
+          addr: v.addr,
+          rssi: v.rssi.unwrap_or(1)
+        }
+      })
       .collect();
 
     // Create datagram
-    let hello = packetizer.construct_hello(&name, roles, &neighbour);
-    let (_, bin) = packetizer.encode_packet(&hello);
+    let beacon = packetizer.construct_beacon(&name, roles, &neighbour);
+    let (_, bin) = packetizer.encode_packet(&beacon);
 
     // Send packet to device mac broadcast
     mac

@@ -2,6 +2,7 @@ use crate::{packetizer::Packetizer, routing_table::RoutingTable, burelom_node::B
 use alloc::sync::Arc;
 use anyhow::{anyhow, Result};
 use hashbrown::HashMap;
+use heapless::HistoryBuf;
 use crate::logging::info;
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use core::cell::RefCell;
@@ -17,7 +18,7 @@ pub struct ActionApi {
   mac: Arc<Box<dyn Mac>>,
   addr: u32,
   preq_awaiters: Arc<Mutex<CriticalSectionRawMutex, RefCell<HashMap<u32, async_oneshot::Sender<u32>>>>>,
-  seen_packet: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<(u32, u32)>>>>
+  seen_packet: Arc<Mutex<CriticalSectionRawMutex, RefCell<HistoryBuf<u32, 10>>>>
 }
 
 impl ActionApi {
@@ -94,7 +95,7 @@ impl ActionApi {
 
     // Put packet to seen (for break ciquit in one hop target)
     self.seen_packet.lock(|seen_packet| {
-      seen_packet.borrow_mut().push((packet_id, 0));
+      seen_packet.borrow_mut().write(packet_id);
     });
 
     // Send packet to device mac broadcast

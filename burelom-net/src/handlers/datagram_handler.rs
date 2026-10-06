@@ -36,8 +36,9 @@ impl DatagramHandler {
   /// node has GATEWAY role.
   ///
   /// #Arguments
+  /// `gateway` - gateway where are packet come from
   /// `packet` - processed packet
-  pub async fn handle(&self, packet: &mut proto::Packet) {
+  pub async fn handle(&self, gateway: u32, packet: &mut proto::Packet) {
     let Some(proto::packet::Body::Datagram(datagram)) = packet.body.as_mut() else {
         unreachable!("handle called for non-Datagram packet");
     };
@@ -86,6 +87,15 @@ impl DatagramHandler {
         self.mac.send(gw, &bin).await;
       } else {
         warn!("<{}> Not found gateway to datagram send from={}", self.addr, packet.source);
+
+        // Create rerr packet
+        let rerr = self.packetizer.construct_rerr(packet.source, packet.dest);
+        let (_, bin) = self.packetizer.encode_packet(&rerr);
+
+        // Repond with routing error to source
+        self.mac
+          .send(gateway, &bin)
+          .await;
       }
     }
   }

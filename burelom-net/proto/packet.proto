@@ -12,7 +12,9 @@ message Packet {
     Datagram datagram = 10;
     Preq preq = 11;
     Prep prep = 12;
-    Hello hello = 13;
+    Beacon beacon = 13;
+    Hello hello = 14;
+    Rerr rerr = 15;
   }
 }
 
@@ -34,8 +36,19 @@ message Prep {
   uint32 source = 3;
 }
 
-message Hello {
+message Beacon {
   string name = 1;
   uint32 roles = 2;
-  repeated uint32 neighbour = 3;
+  repeated NodeNeighbour neighbour = 3;
+}
+
+message Hello {}
+
+message Rerr {
+  uint32 original_dest = 1;
+}
+
+message NodeNeighbour {
+  uint32 addr = 1;
+  int32 rssi = 2;
 }

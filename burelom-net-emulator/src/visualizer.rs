@@ -37,10 +37,17 @@ struct RenderKnownNode {
     addr: u32,
     name: Option<String>,
     hops: u32,
+    rssi: Option<i32>,
     last_seen: Instant,
-    neighbour_nodes: Option<Vec<u32>>,
+    neighbour_nodes: Option<Vec<RenderNeighbourNode>>,
     identy_type: EnumSet<IdentyType>,
     roles: Option<EnumSet<DeviceRole>>
+}
+
+#[derive(Clone, Debug)]
+struct RenderNeighbourNode {
+    addr: u32,
+    rssi: i32
 }
 
 #[derive(Clone, Debug)]
@@ -48,6 +55,8 @@ struct RenderTransaction {
     time: u128,
     from_position: [f32; 2],
     to_position: [f32; 2],
+    from_addr: u32, 
+    to_addr: u32,
     packet: proto::Packet
 }
 
@@ -83,6 +92,18 @@ impl VisualizerState {
             ctx.request_repaint();
         }
     }
+
+    pub fn remove_node(&self, addr: u32) {
+        if let Ok(mut nodes) = self.nodes.lock() {
+            nodes.retain(|v| v.addr != addr);
+        } 
+        if let Ok(mut transactions) = self.transactions.lock() {
+            transactions.retain(|v| v.to_addr != addr && v.from_addr != addr);
+        } 
+        if let Some(ctx) = self.egui_context.as_ref() {
+            ctx.request_repaint();
+        }
+    }
     
     pub fn add_transction(&self, from: &TestNode, to: &TestNode, packet: &proto::Packet) {
         if let Ok(mut rt) = self.transactions.lock() {
@@ -90,6 +111,8 @@ impl VisualizerState {
                 time: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
                 from_position: from.position,
                 to_position: to.position,
+                from_addr: from.addr,
+                to_addr: to.addr,
                 packet: packet.clone()
             };
             //info!("{:?}", &tr);
@@ -122,12 +145,25 @@ impl VisualizerState {
                 node.known_nodes = known_nodes
                     .iter()
                     .map(|v| {
+                        let rnn: Vec<RenderNeighbourNode> = v.neighbour_nodes
+                            .as_ref()
+                            .unwrap_or(&Vec::new())
+                            .iter()
+                            .map(|v| {
+                                RenderNeighbourNode {
+                                    addr: v.addr,
+                                    rssi: v.rssi
+                                }
+                            })
+                            .collect();
+
                         RenderKnownNode {
                             addr: v.addr,
                             name: v.name.as_ref().cloned(),
                             hops: v.hops,
+                            rssi: v.rssi,
                             last_seen: v.last_seen,
-                            neighbour_nodes: v.neighbour_nodes.as_ref().cloned(),
+                            neighbour_nodes: Some(rnn),
                             identy_type: v.identy_type,
                             roles: v.roles
                         }
@@ -293,7 +329,7 @@ fn layout_known_nodes(
         for (i, kn) in known.iter().enumerate() {
             if let Some(neighs) = &kn.neighbour_nodes {
                 for nb in neighs {
-                    if let Some(&j) = idx_of.get(nb) {
+                    if let Some(&j) = idx_of.get(&nb.addr) {
                         if i != j {
                             let d = pos[j] - pos[i];
                             let f = d * attraction;
@@ -683,6 +719,7 @@ impl eframe::App for Visualizer {
                     const COL_ADDR:    usize = 6;
                     const COL_NAME:    usize = 16;
                     const COL_HOPS:    usize = 4;
+                    const COL_RSSI:   usize = 4;
                     const COL_LAST:    usize = 8;
                     const COL_IDENT:   usize = 24;
                     const COL_ROLES:   usize = 24;
@@ -728,20 +765,22 @@ impl eframe::App for Visualizer {
                         text.push_str("\n  (empty)");
                     } else {
                         text.push_str(&format!(
-                            "\n  {} {} {} {} {} {} {}",
+                            "\n  {} {} {} {} {} {} {} {}",
                             pad_cell("addr",       COL_ADDR),
                             pad_cell("name",       COL_NAME),
                             pad_cell("hops",       COL_HOPS),
+                            pad_cell("hops",       COL_RSSI),
                             pad_cell("last",       COL_LAST),
                             pad_cell("identy",     COL_IDENT),
                             pad_cell("roles",      COL_ROLES),
                             pad_cell("neighbours", COL_NEIGH),
                         ));
                         text.push_str(&format!(
-                            "\n  {} {} {} {} {} {} {}",
+                            "\n  {} {} {} {} {} {} {} {}",
                             "-".repeat(COL_ADDR),
                             "-".repeat(COL_NAME),
                             "-".repeat(COL_HOPS),
+                            "-".repeat(COL_RSSI),
                             "-".repeat(COL_LAST),
                             "-".repeat(COL_IDENT),
                             "-".repeat(COL_ROLES),
@@ -777,7 +816,7 @@ impl eframe::App for Visualizer {
                             let neighbours = match &kn.neighbour_nodes {
                                 Some(v) if !v.is_empty() => v
                                     .iter()
-                                    .map(|x| x.to_string())
+                                    .map(|x| x.addr.to_string())
                                     .collect::<Vec<_>>()
                                     .join(", "),
                                 _ => "Unknown".to_string(),
@@ -785,10 +824,11 @@ impl eframe::App for Visualizer {
                             let last_str = format!("{}s", last_seen_secs);
 
                             text.push_str(&format!(
-                                "\n  {} {} {} {} {} {} {}",
+                                "\n  {} {} {} {} {} {} {} {}",
                                 pad_cell(&kn.addr.to_string(), COL_ADDR),
                                 pad_cell(&name,                COL_NAME),
                                 pad_cell(&kn.hops.to_string(), COL_HOPS),
+                                pad_cell(&kn.rssi.map(|v| v.to_string()).unwrap_or(" ".to_string()), COL_RSSI),
                                 pad_cell(&last_str,            COL_LAST),
                                 pad_cell(&identy,              COL_IDENT),
                                 pad_cell(&roles,               COL_ROLES),
@@ -849,12 +889,23 @@ impl eframe::App for Visualizer {
                                     prep.hops, prep.dest, prep.source
                                 ),
                             ),
-                            Some(proto::packet::Body::Hello(hello)) => (
-                                "HELLO",
+                            Some(proto::packet::Body::Rerr(rerr)) => (
+                                "RERR",
+                                format!(
+                                    "original_dest: {}",
+                                    rerr.original_dest
+                                ),
+                            ),
+                            Some(proto::packet::Body::Beacon(beacon)) => (
+                                "BEACON",
                                 format!(
                                     "name: {}, roles: {:?}, neighbour: {:?}",
-                                    hello.name, EnumSet::<DeviceRole>::from_u32(hello.roles), hello.neighbour
+                                    beacon.name, EnumSet::<DeviceRole>::from_u32(beacon.roles), beacon.neighbour
                                 ),
+                            ),
+                            Some(proto::packet::Body::Hello(_)) => (
+                                "HELLO",
+                                "".to_owned(),
                             ),
                             None => ("UNKNOWN", "".to_string()),
                         };
@@ -943,17 +994,17 @@ impl eframe::App for Visualizer {
                         let edge_color = egui::Color32::from_gray(110);
                         for kn in &node.known_nodes {
                             if let Some(neighs) = &kn.neighbour_nodes {
-                                for &nb in neighs {
-                                    let key = if kn.addr <= nb {
-                                        (kn.addr, nb)
+                                for nb in neighs {
+                                    let key = if kn.addr <= nb.addr {
+                                        (kn.addr, nb.addr)
                                     } else {
-                                        (nb, kn.addr)
+                                        (nb.addr, kn.addr)
                                     };
                                     if !seen_edges.insert(key) {
                                         continue;
                                     }
                                     if let (Some(&a), Some(&b)) =
-                                        (layout.get(&kn.addr), layout.get(&nb))
+                                        (layout.get(&kn.addr), layout.get(&nb.addr))
                                     {
                                         painter.line_segment(
                                             [a, b],

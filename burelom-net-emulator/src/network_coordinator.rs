@@ -64,12 +64,11 @@ impl NetworkCoorditor {
   // Узел отправил данные в сеть
   pub fn send_from_mac(&self, from: u32, gw: u32, data: &Vec<u8>) {
     // Получаем ноду от которой идет отправка
-    let from_test_node = self.node_hash
-        .lock()
-        .unwrap()
-        .get(&from)
-        .unwrap()
-        .clone();
+    let node_hash = self.node_hash.lock().unwrap();
+    if !node_hash.contains_key(&from) {
+      return;
+    }
+    let from_test_node = node_hash.get(&from).unwrap();
 
     // Находим все ноды в зоне видимости отправителя
     let neighbour_node_list = self.node_spatial
@@ -84,7 +83,6 @@ impl NetworkCoorditor {
       .filter(|v| *v != from)
       .collect::<Vec<u32>>()
       .pipe(|v| {
-        let node_hash = self.node_hash.lock().unwrap();
         v.iter()
           .map(|a| {
             node_hash.get(a).unwrap().clone()
@@ -119,7 +117,7 @@ impl NetworkCoorditor {
   }
 
   // mac узла подписывается на входящие данные из сети
-  pub async fn recv_from_mac(&self, addr: u32) -> (u32, Vec<u8>) {
+  pub async fn recv_from_mac(&self, addr: u32) -> (u32, i32, Vec<u8>) {
     // Получаем тестовую ноду в которую будут приходить данные
     let test_node = self.node_hash
         .lock()
@@ -137,7 +135,18 @@ impl NetworkCoorditor {
       .await
       .unwrap();
 
-    (gw, data)
+    // Получаем ноду от коротой пришли данные
+    let from_test_node = self.node_hash
+        .lock()
+        .unwrap()
+        .get(&gw)
+        .unwrap()
+        .clone();
+
+    // Эмулируем rssi
+    let rssi = self.signal_strength(from_test_node.position, test_node.position, from_test_node.power);
+
+    (gw, rssi, data)
   }
 
   pub async fn send_broadcast(&self, from: u32, data: Vec<u8>) {
@@ -188,5 +197,29 @@ impl NetworkCoorditor {
       .clone();
 
     test_node.node.route_request(dest).await
+  }
+
+  pub fn remove_node(&self, addr: u32) {
+    let removed_node = self.node_hash
+      .lock()
+      .unwrap()
+      .remove(&addr)
+      .unwrap();
+    
+    self.node_spatial
+      .lock()
+      .unwrap()
+      .remove(&removed_node.position, addr as u64);
+
+    self.visualizer_state.remove_node(addr);
+  }
+
+  fn signal_strength(&self, a: [f32; 2], b: [f32; 2], power: u32) -> i32 {
+    let dx = a[0] - b[0];
+    let dy = a[1] - b[1];
+    let distance = (dx * dx + dy * dy).sqrt();
+
+    let t = (distance / power as f32).min(1.0);
+    (-70.0 - 40.0 * t) as i32
   }
 }

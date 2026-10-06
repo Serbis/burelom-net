@@ -39,6 +39,7 @@ embassy-time = { version = "0.5.0", features = ["defmt"], optional = true }
 embassy-executor = { version = "0.10.0", features = ["defmt"], optional = true }
 embassy-sync = { version = "0.8.0", features = ["defmt"], optional = true }
 embassy-futures = { version = "0.1.2", features = ["defmt"], optional = true }
+heapless = "0.9.3"
 
 
 [build-dependencies]

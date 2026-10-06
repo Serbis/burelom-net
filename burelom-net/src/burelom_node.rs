@@ -1,11 +1,10 @@
 use core::cell::RefCell;
-use alloc::vec;
-use core::sync::atomic::{AtomicU32};
 use alloc::vec::Vec;
 use async_channel::{Receiver, Sender};
 use enumset::EnumSet;
 use hashbrown::HashMap;
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
+use heapless::HistoryBuf;
 use crate::action_api::ActionApi;
 use crate::node_registry::{NodeRegistry, NodeRegistryRow};
 use crate::roles;
@@ -13,6 +12,7 @@ use crate::roles::device_roles::DeviceRole;
 use crate::routing_table::RoutingTable;
 use crate::traits::cipher::Cipher;
 use crate::traits::gateway::Gateway;
+use crate::traits::rand::Rand;
 use crate::{packetizer::{Packetizer}, traits::mac::Mac};
 use anyhow::{Result, anyhow};
 use crate::logging::{error};
@@ -40,6 +40,8 @@ pub struct BurelomNode {
   pub(crate) gateway_sender: Arc<Sender<(u32, Vec<u8>)>>,
   /// Beaconing interval is the node have role BEACON
   pub(crate) beacon_interval: Duration,
+  /// Hello packets send interval
+  pub(crate) hello_interval: Duration,
   /// Name of the node
   pub(crate) name: String,
   /// Roles of the node
@@ -54,7 +56,7 @@ pub struct BurelomNode {
   /// Gateway adapter if the node configured as GATEWAY
   pub(crate) gateway: Option<Arc<dyn Gateway>>,
   /// Registry of seen pakcets broadcast id's
-  pub(crate) seen_packet: Arc<Mutex<CriticalSectionRawMutex, RefCell<Vec<(u32, u32)>>>>,
+  pub(crate) seen_packet: Arc<Mutex<CriticalSectionRawMutex, RefCell<HistoryBuf<u32, 10>>>>,
   /// Routing table
   pub routing_table: Arc<RoutingTable>,
   /// Known nodes database
@@ -72,16 +74,19 @@ impl BurelomNode {
   /// ```
   /// let mac = YourMac::new();
   /// let cipher = YourCipher::new();
-  /// let gateway = YourGateway::n32();
+  /// let gateway = YourGateway::new();
+  /// let rand = YourRand::new();
   /// 
   /// let node = BurelomNode::builder()
   ///   .addr(1)
   ///   .name("My_node_1".into())
   ///   .roles(DeviceRole::DEFAULT | DeviceRole::BEACON | DeviceRole::GATEWAY)
   ///   .mac(Box::new(cipher))
+  ///   .rand(Box::new(rand))
   ///   .cipher(Box::new(cipher))
-  ///   .gateway(Ard::new(gateway))
+  ///   .gateway(Arc::new(gateway))
   ///   .beacon_interval(Duration::from_secs(60))
+  ///   .hello_interval(Duration::from_secs(120))
   ///   .build();
   /// 
   /// if let Ok(node) = node {
@@ -100,9 +105,17 @@ impl BurelomNode {
     roles: EnumSet<DeviceRole>,
     /// Cipther adapter, see trait definition for more details
     cipher: Box<dyn Cipher>,
+    /// Platfrom specific source of entropy
+    rand: Box<dyn Rand>,
     /// Beaconing interval, used when BEACON role is defined, if not set,
     /// default value of 60 sec will be setup
     beacon_interval: Option<Duration>,
+    /// Hello pakcets send interval, if not set, default value of 60 sec will
+    /// be setup
+    hello_interval: Option<Duration>,
+    /// Time to gateway cleaup if no hello packets received from, if not set,
+    /// default value of 120 sec will be setup
+    route_ttl: Option<Duration>,
     /// Device name, used for node identification when BEACON role is defined, if not set
     /// default value of Node-{addr} will be setup
     name: Option<String>,
@@ -111,13 +124,13 @@ impl BurelomNode {
     gateway: Option<Arc<dyn Gateway>>,
   ) -> Result<Self> {
   
-    let id_counter = Arc::new(Mutex::new(AtomicU32::new(addr * 10)));
-    let packetizer = Packetizer::new(id_counter.clone(), addr, cipher);
+    let packetizer = Packetizer::new(rand, addr, cipher);
     let node_registry = Arc::new(NodeRegistry::new());
     let (datagram_sender, datagram_receiver) 
       = async_channel::unbounded::<(u32, Vec<u8>)>();
     let (gateway_sender, gateway_receiver) 
       = async_channel::unbounded::<(u32, Vec<u8>)>();
+    let route_ttl = route_ttl.unwrap_or(Duration::from_secs(120));
 
     if let Some(name) = &name {
       if name.len() > 20 {
@@ -141,9 +154,10 @@ impl BurelomNode {
       gateway_receiver: Arc::new(gateway_receiver),
       roles: roles,
       beacon_interval: beacon_interval.unwrap_or(Duration::from_secs(60)),
+      hello_interval: hello_interval.unwrap_or(Duration::from_secs(60)),
       name: name.unwrap_or(format!("Node-{}", addr)),
-      seen_packet: Arc::new(Mutex::new(RefCell::new(vec![]))),
-      routing_table: Arc::new(RoutingTable::new(addr, node_registry.clone())),
+      seen_packet: Arc::new(Mutex::new(RefCell::new(HistoryBuf::<u32, 10>::new()))),
+      routing_table: Arc::new(RoutingTable::new(addr, node_registry.clone(), route_ttl)),
       node_registry,
       action_api: None
     };
@@ -173,13 +187,15 @@ impl BurelomNode {
     if self.roles.contains(DeviceRole::GATEWAY) {
       roles::gateway_role::run(self);
     }
+
+    self.routing_table.run();
   }
 
   /// Run main node logic. This method creates some count of inner async tasks
   /// and then returns control back
   #[cfg(feature = "embassy")]
   pub fn run(&self, spawner: &embassy_executor::Spawner) {
-    if self.roles.contains(DeviceRole::DEFAULT) {
+    if !self.roles.contains(DeviceRole::DEFAULT) {
       error!("Unalbe to start, node must have DEFAULT role");
       return;
     }
@@ -195,6 +211,8 @@ impl BurelomNode {
      if self.roles.contains(DeviceRole::GATEWAY) {
       roles::gateway_role::run(self, spawner);
     }
+
+    self.routing_table.run(spawner);
   }
 
   /// Receive some data addresed to the node

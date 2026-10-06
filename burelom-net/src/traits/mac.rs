@@ -7,7 +7,8 @@ use crate::prelude::*;
 /// 802.15.4. Or it can act as simple transport layer between BLE or ESP-NOW. In test-host
 /// for example it is realised as adapter connected to the network emulator envienment 
 /// (see test_mac.rs)
-#[async_trait]
+#[cfg_attr(feature = "tokio", async_trait)]
+#[cfg_attr(not(feature = "tokio"), async_trait(?Send))]
 pub trait Mac: Send + Sync {
 
   /// Send data. This function will be called when node need to send bynary data trought 
@@ -27,12 +28,12 @@ pub trait Mac: Send + Sync {
   /// Receive data. This function will be called from node and wait when your mac layer
   /// returns some data.
   /// 
-  /// # Returns (gateway, data) - Geteway is a netork adress of node where are from comes
+  /// # Returns (gateway, rssi, data) - Geteway is a netork adress of node where are from comes
   /// data. Gateway is not source in mesh semanthic. It is address of node in MAC
   /// semanthic by represended as u32 mesh address. If your mac layes uses adrress 
   /// smeanthic different from u32, you must convert it throught address translation 
   /// table. Data - is the payload receved from gateway. It can by fragmentd by your
   /// physycal layer, because internal packet hanler of the node, collect full packet 
   /// frame frome fragmets by cobs algorithm.
-  async fn recv(&self) -> (u32, Vec<u8>);
+  async fn recv(&self) -> (u32, i32, Vec<u8>);
 }
