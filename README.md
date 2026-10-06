@@ -8,14 +8,15 @@ This repository contains an implementation of the L3 layer, which implements the
 - Beaconing mechanics and the collection of node-to-node information about the network are supported. Each node at each moment of the network lifetime has its own representation of the network topology. This information may be used for discovery, status detection, and debugging needs.
 - Basic valuable payload encryption based on vector cryptographic algorithms.
 - Gateway functionality, where a node is used as an interface for communication with some external network.
+- Partial testing on the real hardware (in one hop mode).
+- Routes consistency. Control of gateway alive and drop routes if there is offline. Reversed RERR packets if route was break on some point.
 
 What I intend to do in the near future:
-- Control or rounding of the last_seen packet mechanism
 - Raise the debug logging level
-- Remove outdated and unverified routes
+- Remove outdated and unverified routes (partially realized, new RCREQ mechanick)
 - Packet-level CMAC
 - Defence against packet duplication attacks
-- Hardware testing (yes, at the moment it works only in the emulator; see below)
+- Hardware testing (multyhop testing)
 
 Next steps will be dictated by real-world operational requirements and will be established after the first “in metal” tests.
 
